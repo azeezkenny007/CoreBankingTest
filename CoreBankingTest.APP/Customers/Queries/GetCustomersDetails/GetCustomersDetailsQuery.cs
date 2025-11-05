@@ -1,4 +1,5 @@
-﻿using CoreBankingTest.APP.Common.Interfaces;
+﻿using CoreBankingTest.APP.Accounts.Queries.GetAccountSummary;
+using CoreBankingTest.APP.Common.Interfaces;
 using CoreBankingTest.APP.Common.Models;
 
 using CoreBankingTest.CORE.Entities;
@@ -40,8 +41,20 @@ namespace CoreBankingTest.APP.Customers.Queries.GetCustomers
                 LastName = customer.LastName,
                 Email = customer.Email,
                 Phone = customer.PhoneNumber,
+                Address = customer.Address,
+                DateOfBirth = customer.DateOfBirth,
                 DateRegistered = customer.DateCreated,
-                IsActive = customer.IsActive
+                IsActive = customer.IsActive,
+                Accounts = customer.Accounts.Select(account => new AccountSummaryDto
+                {
+                    AccountNumber = account.AccountNumber,
+                    AccountType = account.AccountType.ToString(),
+                    DisplayName = $"{customer.FirstName} {customer.LastName}",
+                    Balance = account.Balance.Amount,
+                    Currency = account.Balance.Currency.Code,
+                    IsActive = account.IsActive,
+                    DateOpened = account.DateOpened
+                }).ToList()
             };
 
             return Result<CustomerDetailsDto>.Success(customerDtos);

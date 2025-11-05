@@ -1,4 +1,5 @@
-﻿using CoreBankingTest.CORE.ValueObjects;
+﻿using CoreBankingTest.APP.Accounts.Queries.GetAccountSummary;
+using CoreBankingTest.CORE.ValueObjects;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -16,5 +17,6 @@ namespace CoreBankingTest.APP.Customers.Queries.GetCustomer
         public string Phone { get; init; } = string.Empty;
         public DateTime DateRegistered { get; init; }
         public bool IsActive { get; init; }
+        public List<AccountSummaryDto> Accounts { get; init; } = new();
     }
 }

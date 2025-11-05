@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 
 namespace CoreBankingTest.DAL.Persistence.Configurations
 {
+    
     public class OutboxMessageConfiguration : IEntityTypeConfiguration<OutBoxMessage>
     {
         public void Configure(EntityTypeBuilder<OutBoxMessage> builder)

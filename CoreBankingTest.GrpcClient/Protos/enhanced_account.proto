@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package corebanking;
+import "Protos/account.proto";
+
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "Corebanking";
+
+// Enhanced account service with streaming capabilities
+service EnhancedAccountService {
+  // Server streaming for real-time transaction monitoring
+  rpc StreamTransactions (StreamTransactionsRequest) returns (stream TransactionResponse);
+
+  // Client streaming for batch transfer operations
+  rpc BatchTransfer (stream TransferMoneyRequest) returns (BatchTransferResponse);
+
+  // Bidirectional streaming for real-time trading
+  rpc LiveTrading (stream TradingOrder) returns (stream TradingExecution);
+}
+
+// Streaming transaction messages
+message StreamTransactionsRequest {
+  string account_number = 1;
+  int32 initial_batch_size = 2;
+}
+
+// Note: TransactionResponse and TransferMoneyRequest are imported from account.proto
+
+// Batch transfer messages
+
+message BatchTransferResponse {
+  int32 total_processed = 1;
+  int32 successful = 2;
+  int32 failed = 3;
+}
+
+message BatchTransferResult {
+  string reference = 1;
+  bool success = 2;
+  string message = 3;
+}
+
+// Trading-specific messages
+message TradingOrder {
+  string order_id = 1;
+  string symbol = 2;
+  string order_type = 3;  // "buy", "sell", "limit", "market"
+  double quantity = 4;
+  double price = 5;
+  string account_number = 6;
+  google.protobuf.Timestamp order_time = 7;
+}
+
+message TradingExecution {
+  string execution_id = 1;
+  string order_id = 2;
+  string symbol = 3;
+  double quantity = 4;
+  double price = 5;
+  string status = 6;  // "pending", "filled", "partial", "cancelled", "rejected"
+  string error_message = 8;
+  google.protobuf.Timestamp timestamp = 9;
+}

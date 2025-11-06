@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="nul" />
     <None Remove="Protos\account.proto" />
     <None Remove="Protos\enhanced_account.proto" />
   </ItemGroup>

@@ -1,0 +1,77 @@
+﻿syntax = "proto3";
+
+package corebanking;
+
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "CoreBankingTest.API.gRPC";
+
+// Account service definition
+service AccountService {
+    rpc GetAccount (GetAccountRequest) returns (AccountResponse);
+    rpc CreateAccount (CreateAccountRequest) returns (CreateAccountResponse);
+    rpc TransferMoney (TransferMoneyRequest) returns (TransferMoneyResponse);
+    rpc GetTransactionHistory (TransactionHistoryRequest) returns (stream TransactionResponse);
+}
+
+// Message definitions
+message GetAccountRequest {
+    string account_number = 1;
+}
+
+message AccountResponse {
+    string account_number = 1;
+    string account_type = 2;
+    double balance = 3;
+    string currency = 4;
+    string customer_name = 5;
+    google.protobuf.Timestamp date_opened = 6;
+    bool is_active = 7;
+}
+
+message CreateAccountRequest {
+    string customer_id = 1;
+    string account_type = 2;
+    double initial_deposit = 3;
+    string currency = 4;
+}
+
+message CreateAccountResponse {
+    string account_id = 1;
+    string account_number = 2;
+    string message = 3;
+}
+
+message TransferMoneyRequest {
+    string source_account_number = 1;
+    string destination_account_number = 2;
+    double amount = 3;
+    string currency = 4;
+    string reference = 5;
+    string description = 6;
+}
+
+message TransferMoneyResponse {
+    bool success = 1;
+    string message = 2;
+    string transaction_id = 3;
+    google.protobuf.Timestamp transfer_date = 4;
+}
+
+message TransactionHistoryRequest {
+    string account_number = 1;
+    google.protobuf.Timestamp start_date = 2;
+    google.protobuf.Timestamp end_date = 3;
+    int32 page_size = 4;
+}
+
+message TransactionResponse {
+    string transaction_id = 1;
+    string type = 2;
+    double amount = 3;
+    string currency = 4;
+    string description = 5;
+    string reference = 6;
+    google.protobuf.Timestamp timestamp = 7;
+    string running_balance = 8;
+}

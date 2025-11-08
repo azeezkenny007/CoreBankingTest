@@ -1,0 +1,251 @@
+﻿ <!-- wwwroot/advanced-banking-client.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Advanced CoreBanking Real-time Client</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
+    <style>
+        .notification {
+            padding: 10px;
+            margin: 5px;
+            border-radius: 5px;
+        }
+
+        .info {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+        }
+
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+        }
+
+        .error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+        }
+
+        .connection-status {
+            padding: 10px;
+            font-weight: bold;
+        }
+
+        .connected {
+            background: #28a745;
+            color: white;
+        }
+
+        .disconnected {
+            background: #dc3545;
+            color: white;
+        }
+
+        .reconnecting {
+            background: #ffc107;
+            color: black;
+        }
+    </style>
+</head>
+<body>
+    <div id="connectionStatus" class="connection-status disconnected">Disconnected</div>
+
+    <div>
+        <input type="text" id="accountNumber" placeholder="Enter account number" value="123456789" />
+        <button onclick="connect()">Connect</button>
+        <button onclick="disconnect()">Disconnect</button>
+        <button onclick="getStats()">Get Stats</button>
+    </div>
+
+    <div id="connectionStats" style="margin: 10px 0;"></div>
+    <div id="notifications"></div>
+
+    <script>
+            let connection = null;
+            const accountNumberInput = document.getElementById('accountNumber');
+            const connectionStatus = document.getElementById('connectionStatus');
+            const connectionStats = document.getElementById('connectionStats');
+            const notifications = document.getElementById('notifications');
+
+            function connect() {
+                const accountNumber = accountNumberInput.value.trim();
+                if (!accountNumber) {
+                    alert('Please enter an account number');
+                    return;
+                }
+
+                connection = new signalR.HubConnectionBuilder()
+                    .withUrl(`/hubs/transactions?accountNumber=${accountNumber}`)
+                    .withAutomaticReconnect({
+                        nextRetryDelayInMilliseconds: retryContext => {
+                            // Exponential backoff: 2s, 4s, 8s, 16s, then 30s max
+                            const delay = Math.min(30000, 2000 * Math.pow(2, retryContext.previousRetryCount));
+                            console.log(`Reconnecting in ${delay}ms...`);
+                            return delay;
+                        }
+                    })
+                    .configureLogging(signalR.LogLevel.Information)
+                    .build();
+
+                // Connection state events
+                connection.onreconnecting(error => {
+                    updateConnectionStatus('reconnecting', 'Reconnecting...');
+                    console.log('Connection lost. Reconnecting...', error);
+                });
+
+                connection.onreconnected(connectionId => {
+                    updateConnectionStatus('connected', 'Reconnected');
+                    console.log('Reconnected with connection ID:', connectionId);
+                });
+
+                connection.onclose(error => {
+                    updateConnectionStatus('disconnected', 'Disconnected');
+                    console.log('Connection closed', error);
+                });
+
+                // Banking-specific events
+                connection.on("ReceiveTransactionNotification", (notification) => {
+                    addNotification(`Transaction: ${notification.type} - $${notification.amount} - ${notification.description}`, 'info');
+                    console.log('New transaction:', notification);
+                });
+
+                connection.on("ReceiveBalanceUpdate", (update) => {
+                    addNotification(`Balance Updated: $${update.newBalance}`, 'info');
+                    console.log('Balance update:', update);
+                });
+
+                connection.on("ReceiveSystemAlert", (alert) => {
+                    addNotification(`System Alert: ${alert.message}`, alert.severity);
+                    console.log('System alert:', alert);
+                });
+
+                connection.on("ReceiveFraudAlert", (alert) => {
+                    addNotification(`FRAUD ALERT: ${alert.description}`, 'error');
+                    console.log('Fraud alert:', alert);
+                });
+
+                connection.on("ConnectionStateChanged", (state) => {
+                    updateConnectionStatus(state.isConnected ? 'connected' : 'disconnected', state.message);
+                    console.log('Connection state changed:', state);
+                });
+
+                // Start connection
+                connection.start()
+                    .then(() => {
+                        updateConnectionStatus('connected', 'Connected to banking service');
+                        console.log('Connected to SignalR hub');
+
+                        // Subscribe to transactions after connection
+                        return connection.invoke('SubscribeToTransactions', accountNumber);
+                    })
+                    .catch(err => {
+                        updateConnectionStatus('error', 'Connection failed');
+                        console.error('Connection failed:', err);
+                    });
+            }
+
+            function disconnect() {
+                if (connection) {
+                    connection.stop()
+                        .then(() => {
+                            updateConnectionStatus('disconnected', 'Disconnected by user');
+                            console.log('Disconnected');
+                        })
+                        .catch(err => console.error('Disconnect error:', err));
+                }
+            }
+
+            function getStats() {
+                if (connection) {
+                    connection.invoke('GetConnectionStats')
+                        .then(stats => {
+                            connectionStats.innerHTML = `
+                                <h3>Connection Statistics</h3>
+                                <p>Total Connections: ${stats.totalConnections}</p>
+                                <p>Active Connections: ${stats.activeConnections}</p>
+                                <p>Total Messages Today: ${stats.totalMessagesToday}</p>
+                                <p>Service Uptime: ${Math.round(stats.uptime.totalMinutes)} minutes</p>
+                            `;
+                        })
+                        .catch(err => console.error('Error getting stats:', err));
+                }
+            }
+
+            function updateConnectionStatus(status, message) {
+                connectionStatus.textContent = message;
+                connectionStatus.className = `connection-status ${status}`;
+            }
+
+            function addNotification(message, type = 'info') {
+                const div = document.createElement('div');
+                div.className = `notification ${type}`;
+                div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+                notifications.prepend(div);
+
+                // Auto-remove old notifications
+                if (notifications.children.length > 20) {
+                    notifications.removeChild(notifications.lastChild);
+                }
+            }
+
+            // Auto-connect on page load for demo
+            window.addEventListener('load', () => {
+                setTimeout(connect, 1000);
+            });
+    </script>
+</body>
+</html>
+
+
+
+    <!-- wwwroot/banking-client.html -->
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>CoreBanking Real-time Client</title>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
+    </head>
+    <body>
+        <div id="connectionStatus">Disconnected</div>
+        <div id="notifications"></div>
+
+        <script>
+            const connection = new signalR.HubConnectionBuilder()
+                .withUrl("/hubs/enhanced-notifications?accountNumber=123456789")
+                .withAutomaticReconnect()
+                .build();
+
+            connection.on("ReceiveTransactionNotification", (notification) => {
+                console.log("New transaction:", notification);
+                addNotification(`Transaction: ${notification.type} - $${notification.amount}`);
+            });
+
+            connection.on("ReceiveBalanceUpdate", (update) => {
+                console.log("Balance update:", update);
+                addNotification(`Balance updated: $${update.newBalance}`);
+            });
+
+            connection.on("ReceiveSystemAlert", (alert) => {
+                console.log("System alert:", alert);
+                addNotification(`ALERT: ${alert.message}`, alert.severity);
+            });
+
+            connection.on("ConnectionStateChanged", (state) => {
+                document.getElementById('connectionStatus').textContent =
+                    state.isConnected ? 'Connected' : 'Disconnected';
+                console.log('Connection state:', state);
+            });
+
+            connection.start()
+                .then(() => console.log('Connected to SignalR'))
+                .catch(err => console.error('Connection failed:', err));
+
+            function addNotification(message, type = 'info') {
+                const div = document.createElement('div');
+                div.className = `notification ${type}`;
+                div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+                document.getElementById('notifications').prepend(div);
+            }
+        </script>
+    </body>
+    </html>

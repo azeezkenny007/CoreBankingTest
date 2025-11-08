@@ -1,0 +1,108 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title>SignalR Test</title>
+    <!-- Add SignalR client library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
+</head>
+<body>
+    <h1>SignalR Banking Test</h1>
+    <div id="connectionStatus">Disconnected</div>
+    <div id="messages" style="border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll;"></div>
+
+    <button onclick="subscribeToAccount('123456789')">Subscribe to Account</button>
+    <button onclick="testTransaction()">Simulate Transaction</button>
+
+    <script>
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/hubs/enhanced-notifications")
+            .withAutomaticReconnect()
+            .build();
+
+        // Connection events
+        connection.onclose(() => {
+            document.getElementById('connectionStatus').textContent = 'Disconnected';
+            addMessage('Connection closed', 'error');
+        });
+
+        connection.onreconnecting(() => {
+            document.getElementById('connectionStatus').textContent = 'Reconnecting...';
+            addMessage('Attempting to reconnect...', 'warning');
+        });
+
+        connection.onreconnected(() => {
+            document.getElementById('connectionStatus').textContent = 'Connected';
+            addMessage('Reconnected successfully', 'success');
+        });
+
+        // Notification handlers
+        connection.on("ReceiveTransactionNotification", (notification) => {
+            addMessage(`TRANSACTION: ${notification.type} - $${notification.amount} - ${notification.description}`, 'info');
+        });
+
+        connection.on("ReceiveBalanceUpdate", (update) => {
+            addMessage(`BALANCE UPDATE: $${update.newBalance}`, 'success');
+        });
+
+        connection.on("ReceiveSystemAlert", (alert) => {
+            addMessage(`SYSTEM ALERT: ${alert.message}`, 'warning');
+        });
+
+        connection.on("ConnectionStateChanged", (state) => {
+            document.getElementById('connectionStatus').textContent = state.isConnected ? 'Connected' : 'Disconnected';
+            addMessage(`Connection state: ${state.message}`, 'info');
+        });
+
+        // Start connection
+        connection.start()
+            .then(() => {
+                document.getElementById('connectionStatus').textContent = 'Connected';
+                addMessage('Successfully connected to SignalR hub', 'success');
+            })
+            .catch(err => {
+                console.error('Connection failed:', err);
+                addMessage('Connection failed: ' + err, 'error');
+            });
+
+        // Helper functions
+        function addMessage(message, type = 'info') {
+            const messagesDiv = document.getElementById('messages');
+            const messageElement = document.createElement('div');
+            messageElement.innerHTML = `[${new Date().toLocaleTimeString()}] <span style="color: ${
+                type === 'error' ? 'red' :
+                type === 'warning' ? 'orange' :
+                type === 'success' ? 'green' : 'blue'
+            }">${message}</span>`;
+            messagesDiv.appendChild(messageElement);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function subscribeToAccount(accountNumber) {
+            connection.invoke("SubscribeToAccount", accountNumber)
+                .then(() => addMessage(`Subscribed to account ${accountNumber}`, 'success'))
+                .catch(err => addMessage(`Subscription failed: ${err}`, 'error'));
+        }
+
+        function testTransaction() {
+            // This would simulate a transaction that triggers domain events
+            addMessage('Trigger test transaction via REST API...', 'info');
+
+            // You can call your REST API here to create a transaction
+            fetch('/api/accounts/transfer', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    sourceAccountNumber: "123456789",
+                    destinationAccountNumber: "987654321",
+                    amount: 100,
+                    currency: "USD",
+                    reference: "Test from SignalR"
+                })
+            })
+            .then(response => response.json())
+            .then(data => addMessage(`Transaction initiated: ${data.message}`, 'success'))
+            .catch(err => addMessage(`Transaction failed: ${err}`, 'error'));
+        }
+    </script>
+</body>
+</html>

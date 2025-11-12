@@ -54,7 +54,7 @@ namespace CoreBankingTest.APP.Accounts.Commands.CreateAccount
                 customerId: request.CustomerId,
                 accountNumber: accountNumber,
                 accountType: Enum.Parse<AccountType>(request.AccountType),
-                initialDeposit: new Money(request.InitialDeposit, request.Currency)
+                initialBalance: new Money(request.InitialDeposit, request.Currency)
             );
 
             // Add to repository

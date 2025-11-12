@@ -1,27 +1,31 @@
 ﻿using CoreBankingTest.API.Hubs;
 using CoreBankingTest.API.Hubs.Interfaces;
 using CoreBankingTest.API.Hubs.Models;
+using CoreBankingTest.CORE.Interfaces;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 
 namespace CoreBankingTest.API.Services
 {
-    public class TransactionBroadcastService : IHostedService, IDisposable
+    public class TransactionBroadcastService : IHostedService, IDisposable, INotificationBroadcaster
     {
         private readonly ILogger<TransactionBroadcastService> _logger;
         private readonly IServiceProvider _serviceProvider;
         private readonly IHubContext<EnhancedTransactionHub, IBankingClient> _hubContext;
+        private readonly IHubContext<NotificationHub> _notificationHub;
         private Timer? _broadcastTimer;
         private readonly Random _random = new();
 
         public TransactionBroadcastService(
             ILogger<TransactionBroadcastService> logger,
             IServiceProvider serviceProvider,
+            IHubContext<NotificationHub> notificationHub,
             IHubContext<EnhancedTransactionHub, IBankingClient> hubContext)
         {
             _logger = logger;
             _serviceProvider = serviceProvider;
             _hubContext = hubContext;
+            _notificationHub = notificationHub;
         }
 
         public Task StartAsync(CancellationToken cancellationToken)
@@ -117,6 +121,62 @@ namespace CoreBankingTest.API.Services
         public void Dispose()
         {
             _broadcastTimer?.Dispose();
+        }
+
+        // Add this method to implement the interface
+        public async Task BroadcastCustomerCreatedAsync(Guid customerId, string customerName, string email, int creditScore)
+        {
+            try
+            {
+                await _notificationHub.Clients.All.SendAsync("CustomerCreated", new
+                {
+                    CustomerId = customerId,
+                    CustomerName = customerName,
+                    Email = email,
+                    CreditScore = creditScore,
+                    Timestamp = DateTime.UtcNow
+                });
+
+                _logger.LogInformation("Broadcasted customer creation for {CustomerId}", customerId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to broadcast customer creation for {CustomerId}", customerId);
+                throw;
+            }
+        }
+
+        public async Task BroadcastTransactionAsync(Guid transactionId, decimal amount, string transactionType, Guid fromAccount, Guid toAccount)
+        {
+            try
+            {
+                await _notificationHub.Clients.All.SendAsync("TransactionProcessed", new
+                {
+                    TransactionId = transactionId,
+                    Amount = amount,
+                    TransactionType = transactionType,
+                    FromAccount = fromAccount,
+                    ToAccount = toAccount,
+                    Timestamp = DateTime.UtcNow
+                });
+
+                _logger.LogInformation("Broadcasted transaction {TransactionId} of {Amount}", transactionId, amount);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to broadcast transaction {TransactionId}", transactionId);
+                throw;
+            }
+        }
+
+        public Task BroadcastFraudAlertAsync(Guid transactionId, string reason, decimal amount)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task BroadcastTransactionAsync(Guid transactionId, decimal amount, string transactionType, string fromAccount, string toAccount)
+        {
+            throw new NotImplementedException();
         }
     }
 }

@@ -25,7 +25,6 @@ namespace CoreBankingTest.CORE.Entities
         public DateTime? DeletedAt { get; private set; }
         public string? DeletedBy { get; private set; }
 
-        // Domain events collection
         private readonly List<DomainEvent> _domainEvents = new();
         public IReadOnlyCollection<DomainEvent> DomainEvents => _domainEvents.AsReadOnly();
 
@@ -45,41 +44,6 @@ namespace CoreBankingTest.CORE.Entities
             Balance = new Money(0);
             DateOpened = DateTime.UtcNow;
             IsActive = true;
-        }
-
-        public static Account Create(
-          CustomerId customerId,
-          AccountNumber accountNumber,
-          AccountType accountType,
-          Money initialDeposit)
-        {
-            // Domain validation
-            if (initialDeposit.Amount < 0)
-                throw new InvalidOperationException("Initial balance cannot be negative");
-
-            if (initialDeposit.Amount > 1000000)
-                throw new InvalidOperationException("Initial deposit too large");
-
-            // Create account using private constructor
-            var account = new Account(
-                accountNumber: accountNumber,
-                accountType: accountType,
-                customerId: customerId
-            )
-            {
-                Balance = initialDeposit // Set initial balance after construction
-            };
-
-            // Raise domain event if needed
-            account.AddDomainEvent(new AccountCreatedEvent(
-                accountId: account.AccountId,
-                accountNumber: account.AccountNumber,
-                customerId: account.CustomerId,
-                accountType: account.AccountType,
-                initialDeposit: account.Balance
-                ));
-
-            return account;
         }
 
         // Core banking operations - these are the aggregate's public API
@@ -114,7 +78,7 @@ namespace CoreBankingTest.CORE.Entities
                 throw new ArgumentException("Withdrawal amount must be positive");
 
             if (Balance.Amount < amount.Amount)
-                throw new InsufficientFundsException(amount.Amount, Balance.Amount);
+                throw new InvalidOperationException("Insufficient funds");
 
             // Special business rule for Savings accounts
             if (AccountType == AccountType.Savings && _transactions.Count(t => t.Type == TransactionType.Withdrawal) >= 6)
@@ -134,15 +98,48 @@ namespace CoreBankingTest.CORE.Entities
             return transaction;
         }
 
-      
+        public static Account Create(
+            CustomerId customerId,
+            AccountNumber accountNumber,
+            AccountType accountType,
+            Money initialBalance)
+        {
+            // Domain validation
+            if (initialBalance.Amount < 0)
+                throw new InvalidOperationException("Initial balance cannot be negative");
 
-        public Result Transfer(Money amount, Account destination, string reference, string description)
+            if (initialBalance.Amount > 1000000)
+                throw new InvalidOperationException("Initial deposit too large");
+
+            // Create account using private constructor
+            var account = new Account(
+                accountNumber: accountNumber,
+                accountType: accountType,
+                customerId: customerId
+            )
+            {
+                Balance = initialBalance // Set initial balance after construction
+            };
+
+            // Raise domain event if needed
+            account.AddDomainEvent(new AccountCreatedEvent(
+                accountId: account.AccountId,
+                accountNumber: account.AccountNumber,
+                customerId: account.CustomerId,
+                accountType: account.AccountType,
+                initialDeposit: account.Balance
+            ));
+
+            return account;
+        }
+
+        public Result<Transaction> Transfer(Money transferAmount, Account destination, string reference, string transferDescription)
         {
             // Validate inputs
             if (destination == null)
                 throw new ArgumentNullException(nameof(destination), "Destination account cannot be null");
 
-            if (amount.Amount <= 0)
+            if (transferAmount.Amount <= 0)
                 throw new InvalidOperationException("Transfer amount must be positive");
 
             if (this == destination)
@@ -156,42 +153,56 @@ namespace CoreBankingTest.CORE.Entities
                 throw new InvalidOperationException("Destination account is not active");
 
             // Check sufficient funds
-            if (Balance.Amount < amount.Amount)
+            if (Balance.Amount < transferAmount.Amount)
             {
                 // Raise insufficient funds event
                 _domainEvents.Add(new InsufficientFundsEvent(
-                    AccountNumber, amount, Balance, "Transfer"));
+                    AccountNumber, transferAmount, Balance, "Transfer"));
 
-                throw new InsufficientFundsException(amount.Amount, Balance.Amount);
+                return (Result<Transaction>)Result<Transaction>.Failure("Insufficient funds for transfer");
             }
 
             // Special business rules for Savings accounts
             if (AccountType == AccountType.Savings &&
-                _transactions.Count(t => t.Type == TransactionType.Withdrawal) >= 6)
+                _transactions.Count(t => t.Type == Enums.TransactionType.Withdrawal) >= 6)
             {
-                return Result.Failure("Savings account withdrawal limit reached");
+                return (Result<Transaction>)Result<Transaction>.Failure("Savings account withdrawal limit reached");
             }
 
             // Execute the transfer as an atomic operation
-            var debitResult = Debit(amount, $"Transfer to {destination.AccountNumber}", reference);
+            var debitResult = Debit(transferAmount, $"Transfer to {destination.AccountNumber}", reference);
             if (!debitResult.IsSuccess)
-                return debitResult;
+                return (Result<Transaction>)Result<Transaction>.Failure(debitResult.Error);
 
-            var creditResult = destination.Credit(amount, $"Transfer from {AccountNumber}", reference);
+            var creditResult = destination.Credit(transferAmount, $"Transfer from {AccountNumber}", reference);
             if (!creditResult.IsSuccess)
-                return creditResult;
+                return (Result<Transaction>)Result<Transaction>.Failure(creditResult.Error);
+
+            // Create transaction record
+            var transactionId = TransactionId.Create();
+            var transaction = new Transaction(
+                this.AccountId,
+                Enums.TransactionType.TransferOut,
+                transferAmount,
+                transferDescription,
+                this,
+                reference);
+
+            // Add transaction to both accounts' transaction collections
+            _transactions.Add(transaction);
+            //destination.AddTransaction(transaction);
 
             // Raise money transferred event
-            var transactionId = TransactionId.Create();
             _domainEvents.Add(new MoneyTransferredEvent(
-                transactionId, AccountNumber, destination.AccountNumber, amount, reference));
+                transactionId,
+                this.AccountNumber,
+                destination.AccountNumber,
+                transferAmount,
+                reference));
 
-            // Return success result
-            return Result.Success();
+            // Return success result with the created transaction
+            return Result<Transaction>.Success(transaction);
         }
-
-
-        // Add to CoreBanking.Core/Entities/Account.cs
 
         public Result Debit(Money amount, string description, string reference)
         {
@@ -253,13 +264,6 @@ namespace CoreBankingTest.CORE.Entities
 
             return Result.Success();
         }
-
-
-        //    destination._transactions.Add(depositTransaction);
-
-        //    // Raise domain events for the transfer
-        //    //AddDomainEvent(new MoneyTransferredEvent(this, destination, amount, reference));
-        //}
 
         // Domain event methods
         public void AddDomainEvent(DomainEvent domainEvent)

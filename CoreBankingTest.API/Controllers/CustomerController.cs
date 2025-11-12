@@ -52,6 +52,25 @@ namespace CoreBankingTest.API.Controllers
             return Ok(ApiResponse<CustomerDetailsDto>.CreateSuccess(result.Data!));
         }
 
+
+        [HttpPost("ordinary")]
+        [ProducesResponseType(typeof(ApiResponse<Guid>), StatusCodes.Status201Created)]
+        [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<ApiResponse<Guid>>> CreateCustomer([FromBody] CreateCustomerRequest request)
+        {
+            var command = _mapper.Map<CreateCustomerCommand>(request);
+            var result = await _mediator.Send(command);
+            //var result = await _mediator.Send(command);
+
+            if (!result.IsSuccess)
+                return BadRequest(ApiResponse.CreateFailure(result.Errors));
+
+            return CreatedAtAction(
+                nameof(GetCustomer),
+                 new { customerId = result.Data },
+                ApiResponse<CustomerId>.CreateSuccess(result.Data!));
+        }
+
         [HttpPost]
         public async Task<IActionResult> EnhancedCreateCustomer([FromBody] CreateCustomerRequest request)
         {

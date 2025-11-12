@@ -28,6 +28,16 @@ namespace CoreBankingTest.DAL.Services
             _logger = logger;
         }
 
+        public Task DispatchAsync(IDomainEvent domainEvent, CancellationToken cancellationToken = default)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task DispatchAsync(IEnumerable<IDomainEvent> domainEvents, CancellationToken cancellationToken = default)
+        {
+            throw new NotImplementedException();
+        }
+
         public async Task DispatchDomainEventsAsync(CancellationToken cancellationToken = default)
         {
             var domainEntities = _context.ChangeTracker

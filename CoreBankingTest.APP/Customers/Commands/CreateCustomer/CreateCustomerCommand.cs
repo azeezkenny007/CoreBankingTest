@@ -5,6 +5,7 @@ using CoreBankingTest.APP.External.DTOs;
 using CoreBankingTest.APP.External.Interfaces;
 using CoreBankingTest.CORE.Entities;
 using CoreBankingTest.CORE.Enums;
+using CoreBankingTest.CORE.Events;
 using CoreBankingTest.CORE.Interfaces;
 using CoreBankingTest.CORE.ValueObjects;
 using MediatR;
@@ -41,6 +42,7 @@ namespace CoreBankingTest.APP.Customers.Commands.CreateCustomer
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ISimulatedCreditScoringService _creditScoringService;
         private readonly IResilienceService _resilienceService;
+        private readonly IDomainEventDispatcher _domainEventDispatcher;
 
         public CreateCustomerCommandHandler(
             ICustomerRepository customerRepository,
@@ -50,7 +52,8 @@ namespace CoreBankingTest.APP.Customers.Commands.CreateCustomer
             IResilientHttpClientService resilientClient,
             IHttpClientFactory httpClientFactory,
             ISimulatedCreditScoringService creditScoringService,
-            IResilienceService resilienceService)
+            IResilienceService resilienceService,
+            IDomainEventDispatcher domainEventDispatcher)
         {
             _customerRepository = customerRepository;
             _unitOfWork = unitOfWork;
@@ -60,21 +63,21 @@ namespace CoreBankingTest.APP.Customers.Commands.CreateCustomer
             _httpClientFactory = httpClientFactory;
             _creditScoringService = creditScoringService;
             _resilienceService = resilienceService;
+            _domainEventDispatcher = domainEventDispatcher;
         }
 
         public async Task<Result<CustomerId>> Handle(CreateCustomerCommand request, CancellationToken cancellationToken)
         {
-            _logger.LogInformation("Creating customer for {Email}", request.Email);
+            _logger.LogInformation("Starting customer creation process for {Email}", request.Email);
 
             try
             {
                 // Step 1: Validate customer with external BVN service
-                //var bvnValidationResult = await ValidateBVNWithResilienceAsync(request, cancellationToken);
-                //if (!bvnValidationResult.IsValid)
-                //{
-
-                //    return Result<CustomerId>.Failure("BVN validation failed: " + bvnValidationResult.Reason);
-                //}
+                /*var bvnValidationResult = await ValidateBVNWithResilienceAsync(request, cancellationToken);
+                if (!bvnValidationResult.IsValid)
+                {
+                    return Result<CustomerId>.Failure($"BVN validation failed: {bvnValidationResult.Reason}");
+                }*/
 
                 // Validate BVN with advanced resilience
                 var bvnValidationResult = await ValidateBVNWithAdvancedResilienceAsync(request.BVN, cancellationToken);
@@ -91,11 +94,11 @@ namespace CoreBankingTest.APP.Customers.Commands.CreateCustomer
                 }
 
                 // Step 2: Check credit score with resilience
-                //var creditScore = await GetCreditScoreWithResilienceAsync(request.BVN, cancellationToken);
-                //if (!creditScore.IsSuccess || creditScore.Score < 300)
-                //{
-                //    return Result<CustomerId>.Failure("Credit score below minimum requirement");
-                //}
+                /*var creditScore = await GetCreditScoreWithResilienceAsync(request.BVN, cancellationToken);
+                if (!creditScore.IsSuccess || creditScore.Score < 300)
+                {
+                    return Result<CustomerId>.Failure("Credit score below minimum requirement");
+                }*/
 
                 // Get credit score with circuit breaker protection
                 var creditScore = await GetCreditScoreWithCircuitBreakerAsync(request.BVN, cancellationToken);
@@ -105,8 +108,7 @@ namespace CoreBankingTest.APP.Customers.Commands.CreateCustomer
                         $"Credit score {creditScore.Score} below minimum requirement (350)");
                 }
 
-
-                // Step 3: Create customer entity
+                // Step 4: Create customer entity
                 var customer = new Customer(
                     request.FirstName,
                     request.LastName,
@@ -116,9 +118,7 @@ namespace CoreBankingTest.APP.Customers.Commands.CreateCustomer
                     request.BVN,
                     creditScore.Score);
 
-                // Step 5: Publish customer created event
                 await _customerRepository.AddAsync(customer, cancellationToken);
-
                 var affectedRows = await _unitOfWork.SaveChangesAsync(cancellationToken);
 
                 if (affectedRows == 0)
@@ -130,11 +130,18 @@ namespace CoreBankingTest.APP.Customers.Commands.CreateCustomer
                 _logger.LogInformation("Successfully created customer {CustomerId} with credit score {Score}",
                     customer.CustomerId, creditScore.Score);
 
+                // Step 5: Publish customer created event
+                var customerCreatedEvent = new CustomerCreatedEvent(
+                customer.CustomerId,
+                customer.FirstName,
+                customer.LastName,
+                customer.Email,
+                customer.PhoneNumber,
+                creditScore.Score);
 
-                await PublishCustomerCreatedEvent(customer, creditScore);
+                await _domainEventDispatcher.DispatchAsync(customerCreatedEvent, cancellationToken);
+
                 return Result<CustomerId>.Success(customer.CustomerId);
-
-
             }
             catch (ExternalServiceException ex)
             {
@@ -193,9 +200,8 @@ namespace CoreBankingTest.APP.Customers.Commands.CreateCustomer
                 cancellationToken);
         }
 
-
         private async Task<SimulatedBVNResponse> ValidateBVNWithAdvancedResilienceAsync(
-    string bvn, CancellationToken cancellationToken)
+        string bvn, CancellationToken cancellationToken)
         {
             return await _resilienceService.ExecuteWithResilienceAsync(
                 async (ct) => await _creditScoringService.ValidateBVNAsync(bvn, ct),
@@ -227,18 +233,6 @@ namespace CoreBankingTest.APP.Customers.Commands.CreateCustomer
                 $"CreditScoreLookup-{bvn}",
                 cancellationToken);
         }
-
-        private async Task PublishCustomerCreatedEvent(Customer customer, SimulatedCreditScoreResponse creditScore)
-        {
-            // This will be implemented in Day 10 with Azure Service Bus
-            _logger.LogInformation(
-                "Would publish CustomerCreatedEvent for {CustomerId} with credit band {Band}",
-                customer.CustomerId, creditScore.Band);
-        }
-
-
-
-
-
     }
+
 }

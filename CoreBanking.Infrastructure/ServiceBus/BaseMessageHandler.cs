@@ -12,6 +12,7 @@ namespace CoreBankingTest.DAL.ServiceBus
 {
     public abstract class BaseMessageHandler<TMessage> : IAsyncDisposable
     {
+
         private readonly ServiceBusProcessor _processor;
         private readonly ILogger<BaseMessageHandler<TMessage>> _logger;
         private bool _disposed = false;
